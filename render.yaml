@@ -1,0 +1,43 @@
+services:
+  # Web Service - Full-stack Node.js app
+  - type: web
+    name: sovereign-agent-ai
+    env: node
+    region: frankfurt
+    plan: free
+    buildCommand: pnpm install && pnpm run build
+    startCommand: pnpm run db:push && pnpm run start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: NODE_OPTIONS
+        value: --max-old-space-size=2048
+      - key: DATABASE_URL
+        fromDatabase:
+          name: sovereign-agent-db
+          property: connectionString
+      - key: JWT_SECRET
+        generateValue: true
+      - key: VITE_APP_TITLE
+        value: Sovereign Agent
+      - key: VITE_APP_LOGO
+        value: /sovereign-agent-logo.png
+      # User must add these via Render dashboard:
+      # - BUILT_IN_FORGE_API_KEY
+      # - BUILT_IN_FORGE_API_URL
+      # - VITE_FRONTEND_FORGE_API_KEY
+      # - VITE_FRONTEND_FORGE_API_URL
+      # - MANUS_API_KEY
+      # - OPENAI_API_KEY
+      # - OAUTH_SERVER_URL
+      # - VITE_OAUTH_PORTAL_URL
+      # - VITE_APP_ID
+      # - OWNER_OPEN_ID
+      # - OWNER_NAME
+
+databases:
+  - name: sovereign-agent-db
+    databaseName: sovereign_agent
+    user: sovereign_agent_user
+    region: frankfurt
+    plan: free
