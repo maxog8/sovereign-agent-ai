@@ -6,7 +6,7 @@ services:
     region: frankfurt
     plan: free
     buildCommand: pnpm install && pnpm run build
-    startCommand: pnpm run db:push && pnpm run start
+    startCommand: pnpm run start
     envVars:
       - key: NODE_ENV
         value: production
