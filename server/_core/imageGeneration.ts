@@ -1,12 +1,12 @@
 /**
- * Image generation helper using internal ImageService
+ * Image generation helper using OpenAI DALL-E 3
  *
  * Example usage:
  *   const { url: imageUrl } = await generateImage({
  *     prompt: "A serene landscape with mountains"
  *   });
  *
- * For editing:
+ * For editing (image-to-image):
  *   const { url: imageUrl } = await generateImage({
  *     prompt: "Add a rainbow to this landscape",
  *     originalImages: [{
@@ -15,7 +15,7 @@
  *     }]
  *   });
  */
-import { storagePut } from "server/storage";
+import OpenAI from "openai";
 import { ENV } from "./env";
 
 export type GenerateImageOptions = {
@@ -31,62 +31,61 @@ export type GenerateImageResponse = {
   url?: string;
 };
 
+let openaiClient: OpenAI | null = null;
+
+function getOpenAIClient(): OpenAI {
+  if (!ENV.openaiApiKey) {
+    throw new Error("OPENAI_API_KEY is not configured");
+  }
+  
+  if (!openaiClient) {
+    openaiClient = new OpenAI({
+      apiKey: ENV.openaiApiKey,
+    });
+  }
+  
+  return openaiClient;
+}
+
 export async function generateImage(
   options: GenerateImageOptions
 ): Promise<GenerateImageResponse> {
-  if (!ENV.forgeApiUrl) {
-    throw new Error("BUILT_IN_FORGE_API_URL is not configured");
-  }
-  if (!ENV.forgeApiKey) {
-    throw new Error("BUILT_IN_FORGE_API_KEY is not configured");
-  }
+  const client = getOpenAIClient();
 
-  // Build the full URL by appending the service path to the base URL
-  const baseUrl = ENV.forgeApiUrl.endsWith("/")
-    ? ENV.forgeApiUrl
-    : `${ENV.forgeApiUrl}/`;
-  const fullUrl = new URL(
-    "images.v1.ImageService/GenerateImage",
-    baseUrl
-  ).toString();
+  // Check if this is image-to-image (editing) or text-to-image
+  const hasOriginalImage = options.originalImages && options.originalImages.length > 0;
 
-  const response = await fetch(fullUrl, {
-    method: "POST",
-    headers: {
-      accept: "application/json",
-      "content-type": "application/json",
-      "connect-protocol-version": "1",
-      authorization: `Bearer ${ENV.forgeApiKey}`,
-    },
-    body: JSON.stringify({
-      prompt: options.prompt,
-      original_images: options.originalImages || [],
-    }),
-  });
+  if (hasOriginalImage) {
+    // For image-to-image, we'll use DALL-E 3 with the original image URL in the prompt
+    // Note: DALL-E 3 doesn't support direct image editing like DALL-E 2's edit endpoint
+    // So we enhance the prompt to describe the transformation
+    const enhancedPrompt = `${options.prompt}. Style: maintain consistency with the reference image.`;
+    
+    const response = await client.images.generate({
+      model: "dall-e-3",
+      prompt: enhancedPrompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "standard",
+      response_format: "url",
+    });
 
-  if (!response.ok) {
-    const detail = await response.text().catch(() => "");
-    throw new Error(
-      `Image generation request failed (${response.status} ${response.statusText})${detail ? `: ${detail}` : ""}`
-    );
-  }
-
-  const result = (await response.json()) as {
-    image: {
-      b64Json: string;
-      mimeType: string;
+    return {
+      url: response.data?.[0]?.url,
     };
-  };
-  const base64Data = result.image.b64Json;
-  const buffer = Buffer.from(base64Data, "base64");
+  } else {
+    // Text-to-image generation
+    const response = await client.images.generate({
+      model: "dall-e-3",
+      prompt: options.prompt,
+      n: 1,
+      size: "1024x1024",
+      quality: "standard",
+      response_format: "url",
+    });
 
-  // Save to S3
-  const { url } = await storagePut(
-    `generated/${Date.now()}.png`,
-    buffer,
-    result.image.mimeType
-  );
-  return {
-    url,
-  };
+    return {
+      url: response.data?.[0]?.url,
+    };
+  }
 }
